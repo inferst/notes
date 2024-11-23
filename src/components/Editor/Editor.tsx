@@ -1,8 +1,8 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 import { useYArray } from "../hooks/y";
-import TextComponent, { TextComponentRef } from "../Text";
+import TextComponent, { TextComponentRef } from "../Text/Text";
 import styles from "./Editor.module.css";
 
 const rootDoc = new Y.Doc();
@@ -23,7 +23,7 @@ export function Editor() {
   const refArray = useRef<TextComponentRef[]>([]);
 
   const handleClick = () => {
-    setState(state + 1);
+    // setState(state + 1);
   };
 
   const handleInsertNext = useCallback((line: number, text: Y.Text) => {
@@ -53,14 +53,14 @@ export function Editor() {
   }, []);
 
   const handleMoveUp = (line: number) => {
-    if (line > 0) {
+    if (data[line - 1] && refArray.current[line - 1]) {
       const position = data[line - 1].length;
       refArray.current[line - 1].focus(position);
     }
   };
 
   const handleMoveDown = (line: number) => {
-    if (line < refArray.current.length - 1) {
+    if (data[line + 1] && refArray.current[line + 1]) {
       refArray.current[line + 1].focus(0);
     }
   };
@@ -85,10 +85,10 @@ export function Editor() {
             ref={(ref) => (refArray.current[line] = ref!)}
             key={line}
             text={item}
-            onInsertNext={(text) => handleInsertNext(line, text)}
-            onDeletePrev={(text) => handleDeletePrev(line, text)}
-            onMoveUp={() => handleMoveUp(line)}
-            onMoveDown={() => handleMoveDown(line)}
+            onInsertBelow={(text) => handleInsertNext(line, text)}
+            onDeleteAbove={(text) => handleDeletePrev(line, text)}
+            onCursorMoveUp={() => handleMoveUp(line)}
+            onCursorMoveDown={() => handleMoveDown(line)}
           />
         );
       })}

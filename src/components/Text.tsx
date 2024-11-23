@@ -7,9 +7,8 @@ import {
   useRef,
 } from "react";
 import * as Y from "yjs";
-import { CtrlKey, useCtrlKey } from "./hooks/key";
-import { getSelectionRange, setCursorAtNodePosition } from "./utils/range";
-import { textParagraphToHtml } from "./utils/text";
+import { useSelectionRangeRef } from "../hooks/range";
+import { textParagraphToHtml } from "../utils/text";
 
 export type TextComponentProps = {
   text: Y.Text;
@@ -31,65 +30,48 @@ const TextComponent = memo(
 
     const ref = useRef<HTMLDivElement | null>(null);
 
-    const range = useRef<[number, number]>([-1, 0]);
-
-    useCtrlKey(ref, (key: CtrlKey) => {
-      if (key == "a") {
-        requestAnimationFrame(() => {
-          range.current = getSelectionRange(ref.current!);
-        });
-      }
-    });
+    const rangeRef = useSelectionRangeRef(ref);
 
     const handleKeyUp = useCallback(() => {}, []);
 
     const handleKeyDown = useCallback(
       (event: React.KeyboardEvent) => {
         if (ref.current) {
-          if (
-            ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
-              event.code,
-            )
-          ) {
-            let move = false;
-
-            if (event.code == "ArrowUp") {
-              if (range.current[0] == 0) {
-                event.preventDefault();
-                event.stopPropagation();
-                onMoveUp();
-                move = true;
-              }
-            } else if (event.code == "ArrowDown") {
-              if (range.current[0] == text.length) {
-                event.preventDefault();
-                event.stopPropagation();
-                onMoveDown();
-                move = true;
-              }
+          if (event.code == "ArrowUp") {
+            if (rangeRef.range.current && rangeRef.range.current.offset == 0) {
+              event.preventDefault();
+              event.stopPropagation();
+              onMoveUp();
             }
-
-            if (!move) {
-              requestAnimationFrame(() => {
-                if (ref.current) {
-                  range.current = getSelectionRange(ref.current);
-                }
-              });
+          } else if (event.code == "ArrowDown") {
+            if (
+              rangeRef.range.current &&
+              rangeRef.range.current.offset == text.length
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              onMoveDown();
             }
           } else if (event.code == "Enter") {
             event.preventDefault();
             event.stopPropagation();
-            const [index, length] = range.current;
-            const cloned = text.clone();
-            if (text.length > 0) {
-              text.doc?.transact(() => {
-                cloned.delete(0, index + length);
-                text.delete(index, text.length - index);
-              });
+            if (rangeRef.range.current) {
+              const range = rangeRef.range.current;
+              const cloned = text.clone();
+              if (text.length > 0) {
+                text.doc?.transact(() => {
+                  cloned.delete(0, range.offset + range.length);
+                  text.delete(range.offset, text.length - range.offset);
+                });
+              }
+              onInsertNext(cloned);
             }
-            onInsertNext(cloned);
           } else if (event.code == "Backspace") {
-            if (range.current[0] == 0 && range.current[1] == 0) {
+            if (
+              rangeRef.range.current &&
+              rangeRef.range.current.offset == 0 &&
+              rangeRef.range.current.length == 0
+            ) {
               event.preventDefault();
               event.stopPropagation();
               onDeletePrev(text);
@@ -100,70 +82,89 @@ const TextComponent = memo(
           }
         }
       },
-      [text, onInsertNext, onDeletePrev, onMoveUp, onMoveDown],
+      [text, onInsertNext, onDeletePrev, onMoveUp, onMoveDown, rangeRef],
     );
-
-    const handleMouseDown = useCallback(() => {
-      requestAnimationFrame(() => {
-        const [index, length] = getSelectionRange(ref.current!);
-        range.current = [index, length];
-      });
-    }, []);
-
-    const handleMouseUp = useCallback(() => {
-      requestAnimationFrame(() => {
-        range.current = getSelectionRange(ref.current!);
-      });
-    }, []);
 
     const handlePaste = useCallback(
       (event: React.ClipboardEvent) => {
-        const clipboardData = event.clipboardData;
-        const pastedData = clipboardData.getData("Text");
-        const [index, length] = range.current;
+        if (rangeRef.range.current) {
+          event.preventDefault();
+          event.stopPropagation();
 
-        text.delete(index, length);
-        text.insert(index, pastedData);
+          const clipboardData = event.clipboardData;
+          const pastedData = clipboardData.getData("Text");
+          const range = rangeRef.range.current;
+
+          rangeRef.setRange({
+            offset: range.offset + pastedData.length,
+            length: 0,
+          });
+
+          text.doc?.transact(() => {
+            text.delete(range.offset, range.length);
+            text.insert(range.offset, pastedData);
+          });
+
+          console.log("pastedData", clipboardData.getData("text/html"));
+          console.log("pastedData", clipboardData.getData("text/plain"));
+
+          rangeRef.focus();
+        }
       },
-      [text],
+      [text, rangeRef],
     );
 
     const handleInput = useCallback(
       (event: React.FormEvent) => {
-        if (ref.current) {
-          const [index, length] = range.current;
+        if (ref.current && rangeRef.range.current) {
+          const range = rangeRef.range.current;
 
           if (event.nativeEvent instanceof InputEvent) {
             switch (event.nativeEvent.inputType) {
               case "insertText": {
+                console.log("insertText", event);
                 const data = event.nativeEvent.data;
 
-                if (length > 0) {
-                  range.current[1] = 0;
-                  text.delete(index, length);
-                }
+                text.doc?.transact(() => {
+                  if (ref.current && rangeRef.range.current) {
+                    if (range.length > 0) {
+                      rangeRef.setRange({
+                        length: 0,
+                      });
+                      text.delete(range.offset, range.length);
+                    }
 
-                range.current[0] = index + 1;
+                    rangeRef.setRange({
+                      offset: range.offset + 1,
+                    });
 
-                if (data != null) {
-                  text.insert(index, data, { bold: true });
-                }
+                    if (data != null) {
+                      text.insert(range.offset, data, { bold: true });
+                    }
+                  }
+                });
 
                 break;
               }
               case "deleteContentBackward": {
-                if (length > 0) {
-                  range.current[1] = 0;
-                  text.delete(index, length);
+                if (range.length > 0) {
+                  rangeRef.setRange({
+                    length: 0,
+                  });
+                  text.delete(range.offset, range.length);
                 } else {
-                  range.current[0] = index - 1;
-                  text.delete(index - 1, 1);
+                  rangeRef.setRange({
+                    offset: range.offset - 1,
+                  });
+                  text.delete(range.offset - 1, 1);
                 }
                 break;
               }
               case "deleteByCut": {
-                range.current[1] = 0;
-                text.delete(index, length);
+                rangeRef.setRange({
+                  length: 0,
+                });
+                text.delete(range.offset, range.length);
                 break;
               }
               default: {
@@ -173,53 +174,37 @@ const TextComponent = memo(
           }
         }
       },
-      [text],
+      [text, rangeRef],
     );
 
-    const textObserve = useCallback(() => {
+    const updateText = useCallback(() => {
       if (ref.current) {
         const paragraph = textParagraphToHtml(text.toDelta());
+
         if (paragraph != ref.current.innerHTML) {
           ref.current.innerHTML = paragraph;
-        }
-        if (
-          ref.current &&
-          ref.current.childNodes.length > 0 &&
-          range.current[0] != -1 &&
-          range.current[1] == 0
-        ) {
-          setCursorAtNodePosition(ref.current, range.current[0]);
+          console.log("Contenteditable updated");
+          // When content editable is updated we need to refocus current position
+          rangeRef.focus();
         }
       }
-    }, [text]);
-
-    const handleBlur = useCallback(() => {
-      range.current = [-1, 0];
-    }, []);
+    }, [text, rangeRef]);
 
     useEffect(() => {
-      text.observe(textObserve);
+      updateText();
+      text.observe(updateText);
 
       return () => {
-        text.unobserve(textObserve);
+        text.unobserve(updateText);
       };
-    }, [text, textObserve]);
-
-    useEffect(() => {
-      textObserve();
-    }, [textObserve]);
-
-    const handleBeforeInput = () => {
-      range.current = getSelectionRange(ref.current!);
-    };
+    }, [text, updateText]);
 
     useImperativeHandle(innerRef, () => ({
       focus: (position: number) => {
-        if (ref.current) {
-          range.current = [position, 0];
-          setCursorAtNodePosition(ref.current, position);
-          ref.current.focus();
-        }
+        rangeRef.setRange({
+          offset: position,
+        });
+        rangeRef.focus();
       },
     }));
 
@@ -228,14 +213,10 @@ const TextComponent = memo(
         <div
           ref={ref}
           contentEditable={true}
-          onMouseUp={handleMouseUp}
-          onMouseDown={handleMouseDown}
           onKeyDown={handleKeyDown}
           onKeyUp={handleKeyUp}
           onInput={handleInput}
           onPaste={handlePaste}
-          onBlur={handleBlur}
-          onBeforeInput={handleBeforeInput}
           style={{
             whiteSpace: "pre-wrap",
           }}

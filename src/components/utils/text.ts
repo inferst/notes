@@ -1,7 +1,6 @@
 import { TextElement } from "../types/text";
 
 export function textParagraphToHtml(elements: TextElement[]): string {
-  console.log(elements);
   return elements
     .map((element) => {
       const text = element.insert

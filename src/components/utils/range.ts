@@ -24,6 +24,11 @@
 //   element.focus();
 // }
 
+export type SelectionRange = {
+  offset: number;
+  length: number;
+};
+
 export function setCursorAtNodePosition(node: Node, index: number) {
   const range = document.createRange();
   const selection = window.getSelection()!;
@@ -50,6 +55,11 @@ export function setCursorAtNodePosition(node: Node, index: number) {
 
   searchNode(node);
 
+  if (!found) {
+    range.setStart(node, 0);
+    range.collapse(true);
+  }
+
   selection.removeAllRanges();
   selection.addRange(range);
 }
@@ -71,7 +81,7 @@ export function forEachNode(
   return true;
 }
 
-export function getSelectionRange(root: Element): [number, number] {
+export function getSelectionRange(root: Element): SelectionRange {
   const selection = window.getSelection()!;
   const range = selection.getRangeAt(0);
   const clonedRange = range.cloneRange();
@@ -95,8 +105,14 @@ export function getSelectionRange(root: Element): [number, number] {
 
   const length = clonedRange.toString().length;
 
-  return [offset, length];
+  return { offset, length };
 }
+
+export const getRange = () => {
+  const selection = window.getSelection()!;
+  const range = selection.getRangeAt(0);
+  return range;
+};
 
 export const setCursorPositionFromPoint = (x: number, y: number) => {
   let range: Range | undefined;

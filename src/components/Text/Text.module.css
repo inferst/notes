@@ -1,0 +1,7 @@
+[contenteditable]:empty:after {
+  content: attr(aria-placeholder);
+}
+
+/* [contenteditable] { */
+/*   -webkit-tap-highlight-color: transparent; */
+/* } */
