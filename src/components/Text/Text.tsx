@@ -2,15 +2,17 @@ import {
   forwardRef,
   memo,
   useCallback,
+  useContext,
   useEffect,
   useImperativeHandle,
   useRef,
   useState,
 } from "react";
 import * as Y from "yjs";
-import { useSelectionRangeRef } from "../hooks/range";
-import { textParagraphToHtml } from "../utils/text";
-import { useTextUpdate } from "../hooks/text";
+import { useTextUpdate } from "./useTextUpdate";
+import { setSelectionRange } from "../../utils/range";
+import { textParagraphToHtml } from "../../utils/text";
+import { EditorContext, EditorContextValue } from "../Editor/ediorContext";
 import "./Text.module.css";
 
 export type TextComponentProps = {
@@ -39,14 +41,14 @@ const TextComponent = memo(
 
     const ref = useRef<HTMLDivElement | null>(null);
 
-    const rangeRef = useSelectionRangeRef(ref);
+    const context = useContext(EditorContext) as EditorContextValue;
 
     const [placeholder, setPlaceholder] = useState("");
 
-    useTextUpdate(
+    const textUpdate = useTextUpdate(
       ref,
-      rangeRef,
       text,
+      context,
       onInsertBelow,
       onDeleteAbove,
       onCursorMoveUp,
@@ -59,12 +61,19 @@ const TextComponent = memo(
 
         if (paragraph != ref.current.innerHTML) {
           ref.current.innerHTML = paragraph;
-          console.log("Contenteditable updated");
+          console.log("updateContent");
+
           // When content editable is updated we need to refocus current position
-          rangeRef.focus();
+          const range = context.selectionRangeRef.current;
+          const focused = context.focusedTextElementRef.current;
+
+          if (range && focused && focused == ref.current) {
+            console.log(range);
+            context.setSelectionRange(range);
+          }
         }
       }
-    }, [text, rangeRef]);
+    }, [text, context]);
 
     useEffect(() => {
       updateContent();
@@ -77,20 +86,22 @@ const TextComponent = memo(
 
     useImperativeHandle(innerRef, () => ({
       focus: (position: number) => {
-        rangeRef.setRange({
-          offset: position,
-        });
-        rangeRef.focus();
+        if (ref.current) {
+          setSelectionRange(ref.current, position);
+          ref.current.focus();
+        }
       },
     }));
 
-    const handleFocus = () => {
-      setPlaceholder("Put your text here");
-    };
+    const handleFocus = useCallback(() => {
+      setPlaceholder("Write something");
+      context.onTextElementFocusIn(ref.current);
+    }, [context]);
 
-    const handleBlur = () => {
+    const handleBlur = useCallback(() => {
       setPlaceholder("");
-    };
+      context.onTextElementFocusIn(null);
+    }, [context]);
 
     return (
       <>
@@ -98,6 +109,9 @@ const TextComponent = memo(
           ref={ref}
           contentEditable={true}
           aria-placeholder={placeholder}
+          onInput={textUpdate.onInput}
+          onKeyDown={textUpdate.onKyeDown}
+          onPaste={textUpdate.onPaste}
           onFocus={handleFocus}
           onBlur={handleBlur}
           style={{
