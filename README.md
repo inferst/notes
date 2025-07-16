@@ -1,3 +1,3 @@
-# Notex
+# Notes
 
 Experiments with Y.js
